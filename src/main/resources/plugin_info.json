@@ -1,0 +1,14 @@
+{
+  "name": "AutoDupe",
+  "version": "2.0",
+  "authors": [
+    "ToxicAven",
+    "Techale"
+  ],
+  "description": "Automatic Item/Shulker dupe for 5B5T",
+  "url": "",
+  "min_api_version": "2.05.01",
+  "required_plugins": [],
+  "main_class": "AutoDupeLoader",
+  "hot_reload": true
+}

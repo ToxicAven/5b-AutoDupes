@@ -1,3 +1,4 @@
+import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.mixin.extension.rightClickDelayTimer
 import com.lambda.client.module.Category
 import com.lambda.client.plugin.api.PluginModule
@@ -27,8 +28,8 @@ import net.minecraft.util.math.Vec3d
 import net.minecraftforge.fml.common.gameevent.TickEvent
 
 /*
-* @author Techale
-* Modified for lambda by ToxicAven
+ * @author Techale
+ * Modified for lambda by ToxicAven
  */
 
 internal object AutoShulkerDupe: PluginModule(
@@ -37,7 +38,6 @@ internal object AutoShulkerDupe: PluginModule(
     description = "Dupe shulkers on 5b5t",
     pluginMain = AutoDupeLoader
 ) {
-    //region ShulkerModeConfig
     private var hopperCheck by setting("Hopper Check", false)
     private var itemCrafting by setting("Item Crafting", 60, 0..100, 1)
     private var maxStackWait by setting("Max Stack Wait", 60, 0..100, 1)
@@ -52,10 +52,8 @@ internal object AutoShulkerDupe: PluginModule(
     private var slotWood = 0
     private var tickPutItem = 0
     private var beforePlaced = false
-    //endregion
 
     init {
-            //region ShulkerInit
             onEnable {
                 if (instructions) {
                     MessageSendHelper.sendChatMessage("To do the dupe, stand on a crafting table that is flush against the ground, look straight down, and enable the module. You need a shulker in your hand, a pickaxe in your hotbar, and wood planks in your inventory.")
@@ -70,7 +68,7 @@ internal object AutoShulkerDupe: PluginModule(
                 when (stage) {
                     0 -> {
                         // Check if the slot is not empty
-                        if (mc.player.inventory.getStackInSlot(slotShulk + 36).isEmpty) {
+                        if (player.inventory.getStackInSlot(slotShulk + 36).isEmpty) {
                             // If it is, look for another shulker
                             slotShulk = findFirstShulker()
                             if (slotShulk == -1) {
@@ -79,25 +77,28 @@ internal object AutoShulkerDupe: PluginModule(
                             }
                         }
                         // Drop the shulker
-                        mc.playerController.windowClick(0, slotShulk + 36, 0, ClickType.THROW, mc.player)
-                        if (mc.player.isSneaking) mc.player.connection.sendPacket(CPacketEntityAction(mc.player, CPacketEntityAction.Action.STOP_SNEAKING))
+                        playerController.windowClick(0, slotShulk + 36, 0, ClickType.THROW, player)
+                        if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
                         // Right Click the wb
-                        mc.playerController.processRightClickBlock(mc.player, mc.world, wbPos, EnumFacing.UP, Vec3d(wbPos), EnumHand.MAIN_HAND)
-                        if (mc.player.isSneaking) mc.player.connection.sendPacket(CPacketEntityAction(mc.player, CPacketEntityAction.Action.START_SNEAKING))
+                        wbPos?.let {
+                            playerController.processRightClickBlock(player, world, it, EnumFacing.UP, Vec3d(it), EnumHand.MAIN_HAND)
+                        }
+                        if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
                         // Go to the other stage
                         stage = 1
                         tickPutItem = 0
                     }
-                    1 ->                 // If we are in the wb
+                    1 ->
+                        // If we are in the wb
                         if (mc.currentScreen is GuiCrafting) {
                             // Wait for crafting
                             if (tickPutItem++ >= itemCrafting) {
                                 // We split the wood and take it
-                                mc.playerController.windowClick(mc.player.openContainer.windowId, if (slotWood < 9) slotWood + 37 else slotWood + 1, 1, ClickType.PICKUP, mc.player)
+                                playerController.windowClick(player.openContainer.windowId, if (slotWood < 9) slotWood + 37 else slotWood + 1, 1, ClickType.PICKUP, mc.player)
                                 // And then put on the wb
-                                mc.playerController.windowClick(mc.player.openContainer.windowId, 1, 0, ClickType.PICKUP, mc.player)
+                                playerController.windowClick(player.openContainer.windowId, 1, 0, ClickType.PICKUP, player)
                                 // Update controller for wb output
-                                mc.playerController.updateController()
+                                playerController.updateController()
                                 // Next stage
                                 stage = 2
                                 tickPutItem = 0
@@ -108,14 +109,14 @@ internal object AutoShulkerDupe: PluginModule(
                         var i = 0
                         while (i < 9) {
                             // If it's block, and shulker, and it is > 1
-                            if (mc.player.inventory.getStackInSlot(i).item is ItemBlock
-                                && (mc.player.inventory.getStackInSlot(i).item as ItemBlock).block is BlockShulkerBox && mc.player.inventory.getStackInSlot(i).count > 1) {
+                            if (player.inventory.getStackInSlot(i).item is ItemBlock
+                                && (player.inventory.getStackInSlot(i).item as ItemBlock).block is BlockShulkerBox && player.inventory.getStackInSlot(i).count > 1) {
                                 // Close and place it
-                                mc.player.closeScreen()
-                                mc.player.inventory.currentItem = i
-                                if (!mc.player.isSneaking) mc.player.connection.sendPacket(CPacketEntityAction(mc.player, CPacketEntityAction.Action.START_SNEAKING))
+                                player.closeScreen()
+                                player.inventory.currentItem = i
+                                if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
                                 shulkerPos?.let { it1 -> place(it1, EnumHand.MAIN_HAND, false) }
-                                if (!mc.player.isSneaking) mc.player.connection.sendPacket(CPacketEntityAction(mc.player, CPacketEntityAction.Action.STOP_SNEAKING))
+                                if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
                                 // Ready for the other stage
                                 stage = 3
                                 tickPutItem = 0
@@ -127,17 +128,18 @@ internal object AutoShulkerDupe: PluginModule(
                         // In case of error and it has not found a shulker
                         if (tickPutItem++ > maxStackWait) {
                             stage = 0
-                            mc.player.closeScreen()
+                            player.closeScreen()
                             tickPutItem = 0
                         }
                     }
-                    3 ->                 // If that block is BlockShulker
+                    3 ->
+                        // If that block is BlockShulker
                         if (getBlock(shulkerPos) is BlockShulkerBox) {
                             // Continue mining it
                             beforePlaced = true
-                            mc.player.inventory.currentItem = slotPick
-                            mc.player.swingArm(EnumHand.MAIN_HAND)
-                            mc.playerController.onPlayerDamageBlock(shulkerPos, EnumFacing.UP)
+                            player.inventory.currentItem = slotPick
+                            player.swingArm(EnumHand.MAIN_HAND)
+                            shulkerPos?.let { playerController.onPlayerDamageBlock(it, EnumFacing.UP) }
                         } else {
                             // If beforePlaced == true and this is not blockShulker (so we have mined it)
                             // Or we run out of time
@@ -146,10 +148,10 @@ internal object AutoShulkerDupe: PluginModule(
                 }
             }
         }
-     //region ShulkerBulk
-    private fun initValues() {
+
+    private fun SafeClientEvent.initValues() {
         // Check for the crafting table
-        wbPos = BlockPos(mc.player.posX, mc.player.posY, mc.player.posZ).add(.5, -1.0, .5)
+        wbPos = BlockPos(player.posX, player.posY, player.posZ).add(.5, -1.0, .5)
         // Check for the hopper
         shulkerPos = null
         for (surround in arrayOf( // -2 Because the hopper must be down
@@ -161,15 +163,15 @@ internal object AutoShulkerDupe: PluginModule(
             // If we have to check for a hopper
             if (hopperCheck) {
                 // Pos hopper
-                val pos = BlockPos(mc.player.posX + surround.x, mc.player.posY + surround.y, mc.player.posZ + surround.z)
+                val pos = BlockPos(player.posX + surround.x, player.posY + surround.y, player.posZ + surround.z)
                 // Is hopper
                 if (getBlock(pos) is BlockHopper) {
-                    shulkerPos = BlockPos(mc.player.posX + surround.x, mc.player.posY, mc.player.posZ + surround.z)
+                    shulkerPos = BlockPos(player.posX + surround.x, player.posY, player.posZ + surround.z)
                     break
                 }
             } else {
                 // Else, the block must be air
-                val pos = BlockPos(mc.player.posX + surround.x, mc.player.posY, mc.player.posZ + surround.z)
+                val pos = BlockPos(player.posX + surround.x, player.posY, player.posZ + surround.z)
                 if (getBlock(pos) is BlockAir) {
                     shulkerPos = pos
                     break
@@ -180,12 +182,12 @@ internal object AutoShulkerDupe: PluginModule(
             disable()
             return
         }
-        slotPick = findFirstItemSlot(Items.DIAMOND_PICKAXE.javaClass)
+        slotPick = findFirstItemSlot(Items.DIAMOND_PICKAXE)
         if (slotPick == -1) {
             disable()
             return
         }
-        slotWood = findFirstBlockSlot(Blocks.PLANKS.javaClass)
+        slotWood = findFirstBlockSlot(Blocks.PLANKS)
         if (slotWood == -1) {
             disable()
             return
@@ -198,9 +200,9 @@ internal object AutoShulkerDupe: PluginModule(
         stage = 0
     }
 
-    private fun findFirstShulker(): Int {
+    private fun SafeClientEvent.findFirstShulker(): Int {
         var slot = -1
-        val mainInventory: List<ItemStack> = mc.player.inventory.mainInventory
+        val mainInventory: List<ItemStack> = player.inventory.mainInventory
         for (i in 0..8) {
             val stack = mainInventory[i]
             if (stack == ItemStack.EMPTY || stack.item !is ItemBlock) continue
@@ -212,15 +214,15 @@ internal object AutoShulkerDupe: PluginModule(
         return slot
     }
 
-    private fun findFirstItemSlot(itemToFind: Class<out Item?>): Int {
+    private fun SafeClientEvent.findFirstItemSlot(itemToFind: Item): Int {
         var slot = -1
-        val mainInventory: List<ItemStack> = mc.player.inventory.mainInventory
+        val mainInventory: List<ItemStack> = player.inventory.mainInventory
         for (i in 0..8) {
             val stack = mainInventory[i]
-            if (stack == ItemStack.EMPTY || !itemToFind.isInstance(stack.item)) {
+            if (stack == ItemStack.EMPTY || itemToFind != stack.item) {
                 continue
             }
-            if (itemToFind.isInstance(stack.item)) {
+            if (itemToFind == stack.item) {
                 slot = i
                 break
             }
@@ -228,15 +230,15 @@ internal object AutoShulkerDupe: PluginModule(
         return slot
     }
 
-    private fun findFirstBlockSlot(blockToFind: Class<out Block?>): Int {
+    private fun SafeClientEvent.findFirstBlockSlot(blockToFind: Block): Int {
         var slot = -1
-        val mainInventory: List<ItemStack> = mc.player.inventory.mainInventory
+        val mainInventory: List<ItemStack> = player.inventory.mainInventory
         for (i in 0..35) {
             val stack = mainInventory[i]
             if (stack == ItemStack.EMPTY || stack.item !is ItemBlock) {
                 continue
             }
-            if (blockToFind.isInstance((stack.item as ItemBlock).block)) {
+            if (blockToFind == (stack.item as ItemBlock).block) {
                 slot = i
                 break
             }
@@ -244,27 +246,23 @@ internal object AutoShulkerDupe: PluginModule(
         return slot
     }
 
-    private fun getBlock(pos: BlockPos?): Block? {
+    private fun SafeClientEvent.getBlock(pos: BlockPos?): Block? {
         return getState(pos)?.block
     }
 
-    private fun getState(pos: BlockPos?): IBlockState? {
+    private fun SafeClientEvent.getState(pos: BlockPos?): IBlockState? {
         return mc.world.getBlockState(pos)
     }
 
-    private fun canBeClicked(pos: BlockPos?): Boolean {
+    private fun SafeClientEvent.canBeClicked(pos: BlockPos?): Boolean {
         return getBlock(pos)!!.canCollideCheck(getState(pos), false)
     }
 
-    private fun place(blockPos: BlockPos, hand: EnumHand?, rotate: Boolean): Boolean {
-        return placeBlock(blockPos, hand, rotate, true, null)
+    private fun SafeClientEvent.place(blockPos: BlockPos, hand: EnumHand?, rotate: Boolean): Boolean {
+        return placeBlock(blockPos, hand, rotate, null)
     }
 
-    private fun placeBlock(blockPos: BlockPos, hand: EnumHand?, rotate: Boolean, checkAction: Boolean, forceSide: ArrayList<EnumFacing?>?): Boolean {
-        val player = mc.player
-        val world = mc.world
-        val playerController = mc.playerController
-        if (player == null || world == null || playerController == null) return false
+    private fun SafeClientEvent.placeBlock(blockPos: BlockPos, hand: EnumHand?, checkAction: Boolean, forceSide: ArrayList<EnumFacing?>?): Boolean {
         if (!world.getBlockState(blockPos).material.isReplaceable) {
             return false
         }
@@ -277,7 +275,7 @@ internal object AutoShulkerDupe: PluginModule(
         }
         val hitVec = Vec3d(neighbour).add(0.5, 0.5, 0.5).add(Vec3d(opposite.directionVec).scale(0.5))
         val neighbourBlock = world.getBlockState(neighbour).block
-        if (!mc.player.isSneaking && blockBlacklist.contains(neighbourBlock) || shulkerList.contains(neighbourBlock)) {
+        if (!player.isSneaking && blockBlacklist.contains(neighbourBlock) || shulkerList.contains(neighbourBlock)) {
             player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
         }
         val action = playerController.processRightClickBlock(player, world, neighbour, opposite, hitVec, hand)
@@ -288,13 +286,13 @@ internal object AutoShulkerDupe: PluginModule(
         return action == EnumActionResult.SUCCESS
     }
 
-    private fun getPlaceableSide(pos: BlockPos): EnumFacing? {
+    private fun SafeClientEvent.getPlaceableSide(pos: BlockPos): EnumFacing? {
         for (side in EnumFacing.values()) {
             val neighbour = pos.offset(side)
-            if (!mc.world.getBlockState(neighbour).block.canCollideCheck(mc.world.getBlockState(neighbour), false)) {
+            if (!world.getBlockState(neighbour).block.canCollideCheck(world.getBlockState(neighbour), false)) {
                 continue
             }
-            val blockState = mc.world.getBlockState(neighbour)
+            val blockState = world.getBlockState(neighbour)
             if (!blockState.material.isReplaceable) {
                 return side
             }
@@ -302,14 +300,14 @@ internal object AutoShulkerDupe: PluginModule(
         return null
     }
 
-    private fun placeableSideExclude(pos: BlockPos, excluding: ArrayList<EnumFacing?>): EnumFacing? {
+    private fun SafeClientEvent.placeableSideExclude(pos: BlockPos, excluding: ArrayList<EnumFacing?>): EnumFacing? {
         for (side in EnumFacing.values()) {
             if (!excluding.contains(side)) {
                 val neighbour = pos.offset(side)
-                if (!mc.world.getBlockState(neighbour).block.canCollideCheck(mc.world.getBlockState(neighbour), false)) {
+                if (!world.getBlockState(neighbour).block.canCollideCheck(world.getBlockState(neighbour), false)) {
                     continue
                 }
-                val blockState = mc.world.getBlockState(neighbour)
+                val blockState = world.getBlockState(neighbour)
                 if (!blockState.material.isReplaceable) {
                     return side
                 }
@@ -317,7 +315,6 @@ internal object AutoShulkerDupe: PluginModule(
         }
         return null
     }
-    //endregion
 
     override fun getHudInfo(): String {
         return when (stage) {

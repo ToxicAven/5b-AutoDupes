@@ -1,7 +1,15 @@
+import com.lambda.client.event.SafeClientEvent
+import com.lambda.client.manager.managers.PlayerPacketManager.sendPlayerPacket
 import com.lambda.client.module.Category
 import com.lambda.client.plugin.api.PluginModule
+import com.lambda.client.util.math.Vec2f
 import com.lambda.client.util.text.MessageSendHelper
+import com.lambda.client.util.threads.defaultScope
+import com.lambda.client.util.threads.runSafe
+import com.lambda.client.util.threads.runSafeR
 import com.lambda.client.util.threads.safeListener
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.gui.inventory.GuiInventory
 import net.minecraft.entity.player.EntityPlayer
@@ -16,7 +24,7 @@ import net.minecraft.util.ResourceLocation
 import net.minecraftforge.fml.common.gameevent.TickEvent
 
 /*
-* @author ToxicAven
+ * @author ToxicAven
  */
 
 internal object AutoItemDupe: PluginModule(
@@ -26,15 +34,19 @@ internal object AutoItemDupe: PluginModule(
     pluginMain = AutoDupeLoader
 ) {
     private val cancelGUI by setting("Cancel GUI", true)
-    private val rotate by setting("Rotate", true)
-    private var instructions by setting("Instructions", false)
+    private val interacting by setting("Rotation Mode", RotationMode.SPOOF, description = "Force view client side, only server side or no interaction at all")
+    private var instructions by setting("Instructions", true)
+
+    @Suppress("UNUSED")
+    enum class RotationMode {
+        OFF, SPOOF, VIEW_LOCK
+    }
 
     private var currentWaitPhase = WaitPhase.NONE
     private var startTimeStamp = 0L
     private var countBefore = 0
     private var idBefore = 0
     private var slotBefore = 0
-    private var inProgress = false
     private var lastClickStamp = System.currentTimeMillis()
     private var recipeLocation: ResourceLocation = ResourceLocation("wooden_button")
     //The only way this would be null is if your game is *FUCKED*
@@ -42,14 +54,16 @@ internal object AutoItemDupe: PluginModule(
 
     init {
         onEnable {
-            val check = checkForPlanks()
-            if (check == -1) abort("Planks were not found in inventory.") else currentWaitPhase = WaitPhase.DROP
+            runSafeR {
+                val check = checkForPlanks()
+                if (check == -1) abort("Planks were not found in inventory.") else currentWaitPhase = WaitPhase.DROP
 
-            if (instructions) {
-                MessageSendHelper.sendChatMessage("To do the dupe, have wooden planks in your inventory, hold the item you wish to dupe, and toggle the module. wait until the item is picked back up.")
-                MessageSendHelper.sendWarningMessage("Shulkers cannot be duped using this method. use 'AutoShulkerDupe' for those.")
-                instructions = false
-            }
+                if (instructions) {
+                    MessageSendHelper.sendChatMessage("To do the dupe, have wooden planks in your inventory, hold the item you wish to dupe, and toggle the module. wait until the item is picked back up.")
+                    MessageSendHelper.sendWarningMessage("Shulkers cannot be duped using this method. use 'AutoShulkerDupe' for those.")
+                    instructions = false
+                }
+            } ?: disable()
         }
 
         onDisable {
@@ -61,18 +75,22 @@ internal object AutoItemDupe: PluginModule(
 
             if (currentWaitPhase == WaitPhase.DROP) {
 
-                if (mc.player.inventory.getCurrentItem().isEmpty) abort("You need to hold an item.")
+                if (player.inventory.getCurrentItem().isEmpty) abort("You need to hold an item.")
 
                 if (System.currentTimeMillis() - startTimeStamp < 120L) {
-                    if (!mc.player.recipeBook.isGuiOpen) mc.player.recipeBook.isGuiOpen = true
+                    if (!player.recipeBook.isGuiOpen) player.recipeBook.isGuiOpen = true
                 }
-                if (rotate) mc.player.rotationPitch = 180f
-                idBefore = Item.getIdFromItem(mc.player.inventory.getCurrentItem().item)
+
+                updateRotation()
+
+                idBefore = Item.getIdFromItem(player.inventory.getCurrentItem().item)
                 countBefore = countItem(idBefore)
-                slotBefore = mc.player.inventory.currentItem
+                slotBefore = player.inventory.currentItem
                 throwAllInSlot(slotBefore + 36)
-                if (!cancelGUI) mc.displayGuiScreen(GuiInventory(mc.player as EntityPlayer) as GuiScreen)
-                if (!mc.player.recipeBook.isGuiOpen) abort("Failed to open Recipe Book. Try opening it manually.")
+
+                if (!cancelGUI) mc.displayGuiScreen(GuiInventory(player as EntityPlayer) as GuiScreen)
+                if (!player.recipeBook.isGuiOpen) abort("Failed to open Recipe Book. Try opening it manually.")
+
                 currentWaitPhase = WaitPhase.PICKUP
             }
 
@@ -83,46 +101,56 @@ internal object AutoItemDupe: PluginModule(
         }
     }
 
-    private fun countItem(itemId: Int): Int {
+    private fun SafeClientEvent.updateRotation() {
+        when (interacting) {
+            RotationMode.SPOOF -> {
+                sendPlayerPacket {
+                    rotate(Vec2f(player.rotationYaw, 180f))
+                }
+            }
+            RotationMode.VIEW_LOCK -> {
+                player.rotationPitch = 180f
+            }
+            else -> {
+                // RotationMode.OFF
+            }
+        }
+    }
+
+    private fun SafeClientEvent.countItem(itemId: Int): Int {
         val itemList: ArrayList<Int> = getSlots(itemId)
         var currentCount = 0
         val iterator: Iterator<Int> = itemList.iterator()
         while (iterator.hasNext()) {
             val i = iterator.next()
-            currentCount += mc.player.inventory.getStackInSlot(i).count
+            currentCount += player.inventory.getStackInSlot(i).count
         }
         return currentCount
     }
 
-    private fun getSlots(itemID: Int): ArrayList<Int> {
+    private fun SafeClientEvent.getSlots(itemID: Int): ArrayList<Int> {
         val slots = ArrayList<Int>()
         for (i in 0..8) {
-            if (Item.getIdFromItem(mc.player.inventory.getStackInSlot(i).item) == itemID) slots.add(Integer.valueOf(i))
+            if (Item.getIdFromItem(player.inventory.getStackInSlot(i).item) == itemID) slots.add(Integer.valueOf(i))
         }
         return slots
     }
 
     private fun throwAllInSlot(slot: Int) {
-        if (inProgress) return
-        val thread: Thread = object : Thread() {
-            override fun run() {
-                inProgress = true
-                mc.playerController.windowClick(mc.player.inventoryContainer.windowId, slot, 1, ClickType.THROW, mc.player as EntityPlayer)
-                try {
-                    sleep(1000)
-                    mc.player.connection.sendPacket(CPacketPlaceRecipe(0, pktRecipe, false))
-                } catch (e: InterruptedException) {
-                    abort("Tossing was interrupted.")
-                }
-                inProgress = false
+        defaultScope.launch {
+            runSafe {
+                playerController.windowClick(player.inventoryContainer.windowId, slot, 1, ClickType.THROW, player)
+            }
+            delay(1000L)
+            runSafe {
+                connection.sendPacket(CPacketPlaceRecipe(0, pktRecipe, false))
             }
         }
-        thread.start()
     }
 
-    private fun checkForPlanks(): Int {
+    private fun SafeClientEvent.checkForPlanks(): Int {
         for (i in 0..35) {
-            val stack = mc.player.inventory.getStackInSlot(i)
+            val stack = player.inventory.getStackInSlot(i)
             if (stack.item is ItemBlock) {
                 val block = (stack.item as ItemBlock).block
                 if (block == Blocks.PLANKS) {

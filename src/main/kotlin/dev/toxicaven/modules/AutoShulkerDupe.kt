@@ -1,3 +1,5 @@
+package dev.toxicaven.modules
+
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.mixin.extension.rightClickDelayTimer
 import com.lambda.client.module.Category
@@ -7,6 +9,7 @@ import com.lambda.client.util.items.shulkerList
 import com.lambda.client.util.text.MessageSendHelper
 import com.lambda.client.util.threads.runSafeR
 import com.lambda.client.util.threads.safeListener
+import dev.toxicaven.DupePlugin
 import net.minecraft.block.Block
 import net.minecraft.block.BlockAir
 import net.minecraft.block.BlockHopper
@@ -27,6 +30,7 @@ import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import net.minecraftforge.fml.common.gameevent.TickEvent
 
+
 /*
  * @author Techale
  * Modified for lambda by ToxicAven
@@ -36,13 +40,14 @@ internal object AutoShulkerDupe: PluginModule(
     name = "AutoShulkerDupe",
     category = Category.MISC,
     description = "Dupe shulkers on 5b5t",
-    pluginMain = AutoDupeLoader
+    pluginMain = DupePlugin
 ) {
     private var hopperCheck by setting("Hopper Check", false)
     private var itemCrafting by setting("Item Crafting", 60, 0..100, 1)
     private var maxStackWait by setting("Max Stack Wait", 60, 0..100, 1)
     private var waitPlace by setting("Wait Place", 60, 0..100, 1)
     private var instructions by setting("Instructions", false)
+    private val confirm by setting("Confirm", false)
 
     private var shulkerPos: BlockPos? = null
     private var wbPos:BlockPos? = null
@@ -54,100 +59,110 @@ internal object AutoShulkerDupe: PluginModule(
     private var beforePlaced = false
 
     init {
-            onEnable {
-                if (instructions) {
-                    MessageSendHelper.sendChatMessage("To do the dupe, stand on a crafting table that is flush against the ground, look straight down, and enable the module. You need a shulker in your hand, a pickaxe in your hotbar, and wood planks in your inventory.")
-                    instructions = false
-                }
-                runSafeR {
-                    initValues()
-                }
+        onEnable {
+            if (!confirm) {
+                MessageSendHelper.sendChatMessage("This dupe method is designed for when 5b5t did not allow stacked" +
+                    " shulkers, and should only be used over AutoItemDupe if this has happened again.")
+                MessageSendHelper.sendChatMessage("If you would like to use it anyway, please enabled the confirm" +
+                    " option.")
+                disable()
             }
-            
-            safeListener<TickEvent.ClientTickEvent> {
-                when (stage) {
-                    0 -> {
-                        // Check if the slot is not empty
-                        if (player.inventory.getStackInSlot(slotShulk + 36).isEmpty) {
-                            // If it is, look for another shulker
-                            slotShulk = findFirstShulker()
-                            if (slotShulk == -1) {
-                                // If not found, disable
-                                disable()
-                            }
+
+            if (instructions) {
+                MessageSendHelper.sendChatMessage("To do the dupe, stand on a crafting table that is flush against " +
+                    "the ground, look straight down, and enable the module. You need a shulker in your hand, a " +
+                    "pickaxe in your hotbar, and wood planks in your inventory.")
+                instructions = false
+            }
+            runSafeR {
+                initValues()
+            }
+        }
+
+        safeListener<TickEvent.ClientTickEvent> {
+            when (stage) {
+                0 -> {
+                    // Check if the slot is not empty
+                    if (player.inventory.getStackInSlot(slotShulk + 36).isEmpty) {
+                        // If it is, look for another shulker
+                        slotShulk = findFirstShulker()
+                        if (slotShulk == -1) {
+                            // If not found, disable
+                            disable()
                         }
-                        // Drop the shulker
-                        playerController.windowClick(0, slotShulk + 36, 0, ClickType.THROW, player)
-                        if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
-                        // Right Click the wb
-                        wbPos?.let {
-                            playerController.processRightClickBlock(player, world, it, EnumFacing.UP, Vec3d(it), EnumHand.MAIN_HAND)
-                        }
-                        if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
-                        // Go to the other stage
-                        stage = 1
-                        tickPutItem = 0
                     }
-                    1 ->
-                        // If we are in the wb
-                        if (mc.currentScreen is GuiCrafting) {
-                            // Wait for crafting
-                            if (tickPutItem++ >= itemCrafting) {
-                                // We split the wood and take it
-                                playerController.windowClick(player.openContainer.windowId, if (slotWood < 9) slotWood + 37 else slotWood + 1, 1, ClickType.PICKUP, mc.player)
-                                // And then put on the wb
-                                playerController.windowClick(player.openContainer.windowId, 1, 0, ClickType.PICKUP, player)
-                                // Update controller for wb output
-                                playerController.updateController()
-                                // Next stage
-                                stage = 2
-                                tickPutItem = 0
-                            }
-                        }
-                    2 -> {
-                        // Iterate whole hotbar
-                        var i = 0
-                        while (i < 9) {
-                            // If it's block, and shulker, and it is > 1
-                            if (player.inventory.getStackInSlot(i).item is ItemBlock
-                                && (player.inventory.getStackInSlot(i).item as ItemBlock).block is BlockShulkerBox && player.inventory.getStackInSlot(i).count > 1) {
-                                // Close and place it
-                                player.closeScreen()
-                                player.inventory.currentItem = i
-                                if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
-                                shulkerPos?.let { it1 -> place(it1, EnumHand.MAIN_HAND, false) }
-                                if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
-                                // Ready for the other stage
-                                stage = 3
-                                tickPutItem = 0
-                                beforePlaced = false
-                                break
-                            }
-                            i++
-                        }
-                        // In case of error and it has not found a shulker
-                        if (tickPutItem++ > maxStackWait) {
-                            stage = 0
-                            player.closeScreen()
+                    // Drop the shulker
+                    playerController.windowClick(0, slotShulk + 36, 0, ClickType.THROW, player)
+                    if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
+                    // Right Click the wb
+                    wbPos?.let {
+                        playerController.processRightClickBlock(player, world, it, EnumFacing.UP, Vec3d(it), EnumHand.MAIN_HAND)
+                    }
+                    if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
+                    // Go to the other stage
+                    stage = 1
+                    tickPutItem = 0
+                }
+                1 ->
+                    // If we are in the wb
+                    if (mc.currentScreen is GuiCrafting) {
+                        // Wait for crafting
+                        if (tickPutItem++ >= itemCrafting) {
+                            // We split the wood and take it
+                            playerController.windowClick(player.openContainer.windowId, if (slotWood < 9) slotWood + 37 else slotWood + 1, 1, ClickType.PICKUP, mc.player)
+                            // And then put on the wb
+                            playerController.windowClick(player.openContainer.windowId, 1, 0, ClickType.PICKUP, player)
+                            // Update controller for wb output
+                            playerController.updateController()
+                            // Next stage
+                            stage = 2
                             tickPutItem = 0
                         }
                     }
-                    3 ->
-                        // If that block is BlockShulker
-                        if (getBlock(shulkerPos) is BlockShulkerBox) {
-                            // Continue mining it
-                            beforePlaced = true
-                            player.inventory.currentItem = slotPick
-                            player.swingArm(EnumHand.MAIN_HAND)
-                            shulkerPos?.let { playerController.onPlayerDamageBlock(it, EnumFacing.UP) }
-                        } else {
-                            // If beforePlaced == true and this is not blockShulker (so we have mined it)
-                            // Or we run out of time
-                            if (beforePlaced || tickPutItem++ > waitPlace) stage = 0
+                2 -> {
+                    // Iterate whole hotbar
+                    var i = 0
+                    while (i < 9) {
+                        // If it's block, and shulker, and it is > 1
+                        if (player.inventory.getStackInSlot(i).item is ItemBlock
+                            && (player.inventory.getStackInSlot(i).item as ItemBlock).block is BlockShulkerBox && player.inventory.getStackInSlot(i).count > 1) {
+                            // Close and place it
+                            player.closeScreen()
+                            player.inventory.currentItem = i
+                            if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.START_SNEAKING))
+                            shulkerPos?.let { it1 -> place(it1, EnumHand.MAIN_HAND, false) }
+                            if (!player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
+                            // Ready for the other stage
+                            stage = 3
+                            tickPutItem = 0
+                            beforePlaced = false
+                            break
+                        }
+                        i++
+                    }
+                    // In case of error and it has not found a shulker
+                    if (tickPutItem++ > maxStackWait) {
+                        stage = 0
+                        player.closeScreen()
+                        tickPutItem = 0
                     }
                 }
+                3 ->
+                    // If that block is BlockShulker
+                    if (getBlock(shulkerPos) is BlockShulkerBox) {
+                        // Continue mining it
+                        beforePlaced = true
+                        player.inventory.currentItem = slotPick
+                        player.swingArm(EnumHand.MAIN_HAND)
+                        shulkerPos?.let { playerController.onPlayerDamageBlock(it, EnumFacing.UP) }
+                    } else {
+                        // If beforePlaced == true and this is not blockShulker (so we have mined it)
+                        // Or we run out of time
+                        if (beforePlaced || tickPutItem++ > waitPlace) stage = 0
+                    }
             }
         }
+    }
 
     private fun SafeClientEvent.initValues() {
         // Check for the crafting table

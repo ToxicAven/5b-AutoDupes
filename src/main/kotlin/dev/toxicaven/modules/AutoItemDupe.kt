@@ -1,3 +1,5 @@
+package dev.toxicaven.modules
+
 import com.lambda.client.event.SafeClientEvent
 import com.lambda.client.manager.managers.PlayerPacketManager.sendPlayerPacket
 import com.lambda.client.module.Category
@@ -8,6 +10,7 @@ import com.lambda.client.util.threads.defaultScope
 import com.lambda.client.util.threads.runSafe
 import com.lambda.client.util.threads.runSafeR
 import com.lambda.client.util.threads.safeListener
+import dev.toxicaven.DupePlugin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.minecraft.client.gui.GuiScreen
@@ -31,11 +34,12 @@ internal object AutoItemDupe: PluginModule(
     name = "AutoItemDupe",
     category = Category.MISC,
     description = "Dupe items on 5b5t",
-    pluginMain = AutoDupeLoader
+    pluginMain = DupePlugin
 ) {
     private val cancelGUI by setting("Cancel GUI", true)
     private val interacting by setting("Rotation Mode", RotationMode.SPOOF, description = "Force view client side, only server side or no interaction at all")
     private var instructions by setting("Instructions", true)
+    private val confirm by setting("Confirm", false)
 
     @Suppress("UNUSED")
     enum class RotationMode {
@@ -60,7 +64,7 @@ internal object AutoItemDupe: PluginModule(
 
                 if (instructions) {
                     MessageSendHelper.sendChatMessage("To do the dupe, have wooden planks in your inventory, hold the item you wish to dupe, and toggle the module. wait until the item is picked back up.")
-                    MessageSendHelper.sendWarningMessage("Shulkers cannot be duped using this method. use 'AutoShulkerDupe' for those.")
+                    MessageSendHelper.sendWarningMessage("If 5b5t has disabled stacked shulkers, use 'AutoShulkerDupe' for those.")
                     instructions = false
                 }
             } ?: disable()

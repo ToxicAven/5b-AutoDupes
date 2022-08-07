@@ -5,6 +5,6 @@
   "url": "https://github.com/toxicaven/5b-autodupes",
   "authors": [ "ToxicAven", "Techale" ],
   "main_class": "dev.toxicaven.DupePlugin",
-  "min_api_version": "3.0",
+  "min_api_version": "3.2",
   "required_plugins": []
 }

@@ -94,7 +94,7 @@ internal object AutoShulkerDupe: PluginModule(
                     // Drop the shulker
                     playerController.windowClick(0, slotShulk + 36, 0, ClickType.THROW, player)
                     if (player.isSneaking) player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SNEAKING))
-                    // Right Click the wb
+                    // Right-Click the wb
                     wbPos?.let {
                         playerController.processRightClickBlock(player, world, it, EnumFacing.UP, Vec3d(it), EnumHand.MAIN_HAND)
                     }
@@ -140,7 +140,7 @@ internal object AutoShulkerDupe: PluginModule(
                         }
                         i++
                     }
-                    // In case of error and it has not found a shulker
+                    // In case of error, and it has not found a shulker
                     if (tickPutItem++ > maxStackWait) {
                         stage = 0
                         player.closeScreen()

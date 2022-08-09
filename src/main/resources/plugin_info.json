@@ -1,6 +1,6 @@
 {
   "name": "5bDupes",
-  "version": "2.1",
+  "version": "${version}",
   "description": "5b5t Item Dupes",
   "url": "https://github.com/toxicaven/5b-autodupes",
   "authors": [ "ToxicAven", "Techale" ],
